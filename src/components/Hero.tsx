@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "./Providers";
 import { GlobeStage } from "./globe/GlobeStage";
+import { EarthThroughYears } from "./globe/EarthThroughYears";
 import { apiFetch, type Remote } from "@/lib/hooks";
 import { norm } from "@/lib/globe/ramp";
 import type { MessageKey } from "@/lib/i18n/messages";
@@ -43,15 +44,19 @@ function toAnnual(records: { date: string; value: number; movingAverage10Y: numb
     .sort((a, b) => a.year - b.year);
 }
 
-export function Hero() {
+export function Hero({ initialRecords = [] }: { initialRecords?: { date: string; value: number; movingAverage10Y: number | null }[] }) {
   const { t, fmtNumber, theme, announce } = useApp();
   const [year, setYear] = useState<number | null>(null);
   const [query, setQuery] = useState("");
-  const [series, setSeries] = useState<Remote<Series[]>>({ status: "loading" });
+  const [series, setSeries] = useState<Remote<Series[]>>(() =>
+    initialRecords.length ? { status: "ready", data: toAnnual(initialRecords) } : { status: "loading" },
+  );
   const inputRef = useRef<HTMLInputElement>(null);
 
   // The CSV-backed annual record is a local asset, so this never depends on the upstream network.
   useEffect(() => {
+    // The server already passed the bundled record down; only fetch if it could not be read.
+    if (initialRecords.length) return;
     let alive = true;
     // State is only touched from the promise callback, never synchronously in the effect body.
     apiFetch<TeamPayload>("/api/team-data")
@@ -60,7 +65,7 @@ export function Hero() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [initialRecords.length]);
 
   const annual = useMemo(() => (series.status === "ready" ? series.data : []), [series]);
 
@@ -215,6 +220,18 @@ export function Hero() {
           )}
         </div>
       </div>
+
+      {annual.length > 0 && (
+        <div className="wrap hero2-years">
+          <EarthThroughYears
+            rows={annual}
+            selectedYear={selected?.year ?? null}
+            onSelect={setYear}
+            min={scale.min}
+            max={scale.max}
+          />
+        </div>
+      )}
     </section>
   );
 }

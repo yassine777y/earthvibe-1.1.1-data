@@ -1,19 +1,22 @@
 "use client";
 
 /**
- * EarthGlobe — the 3D centerpiece.
+ * EarthGlobe — a photoreal Earth.
  *
- * A real sphere with real continents (Natural Earth 110m), a day-side light, a faint rim, and a
- * climate band overlay whose colours come from the released annual record. It is decorative:
- * `aria-hidden` on the canvas, and every number it shows also exists as text next to it.
+ * A real Blue Marble (NASA, public domain) is mapped onto the sphere, lit by a sun that always
+ * keeps a visible day/night terminator, and wrapped in a thin atmospheric rim. The climate data is
+ * laid over it as a latitude-band tint whose colours come from the released annual record, so the
+ * warming is visible *on the planet itself* rather than in a detached chart.
  *
- * Written against three.js directly (no react-three-fiber) to keep the lazily-loaded chunk small.
- * Nothing runs until the component mounts, and it stops rendering when off-screen or when the tab
- * is hidden.
+ * Written against three.js directly (no react-three-fiber) so the lazily loaded chunk stays small.
+ * Nothing runs before mount; rendering pauses off-screen, in a hidden tab, and for users who asked
+ * for reduced motion the caller renders the SVG poster instead.
+ *
+ * Accessibility: the canvas is decorative (`aria-hidden` on the wrapper is provided by the caller),
+ * and every number it shows also exists as text beside it.
  */
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { buildLandMesh, toCartesian } from "@/lib/globe/land";
 import { latitudeBands } from "@/lib/globe/ramp";
 
 export type GlobeProps = {
@@ -23,15 +26,14 @@ export type GlobeProps = {
   year: number;
   /** optional live audio amplitude 0..1; without it there is no pulse */
   level?: number;
-  /** theme affects ocean/atmosphere colours */
+  /** theme affects the texture variant, rim and overlay strength */
   theme: "dark" | "light";
   /** when true the globe does not auto-rotate */
   still?: boolean;
 };
 
-const OCEAN = { dark: 0x0b1a26, light: 0x1b3a52 };
-const RIM = { dark: 0x6fd3e0, light: 0x1d6fe0 };
-const LAND = { dark: 0x2a3b40, light: 0x8fa8a0 };
+const RIM = { dark: 0x7fdce8, light: 0x2f7fe8 };
+const TEXTURE = { dark: "/textures/earth-day.jpg", light: "/textures/earth-light.jpg" };
 
 export default function EarthGlobe({ t, year, level = 0, theme, still = false }: GlobeProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -53,64 +55,88 @@ export default function EarthGlobe({ t, year, level = 0, theme, still = false }:
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
     } catch {
-      // WebGL could not be initialised: GlobeStage will keep the SVG poster instead.
       queueMicrotask(() => setFailed(true));
       return;
     }
 
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     renderer.setSize(host.clientWidth, host.clientHeight, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     host.appendChild(renderer.domElement);
     renderer.domElement.style.cssText = "display:block;width:100%;height:100%;";
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(38, host.clientWidth / Math.max(1, host.clientHeight), 0.1, 100);
-    camera.position.set(0, 0, 3.15);
+    const camera = new THREE.PerspectiveCamera(36, host.clientWidth / Math.max(1, host.clientHeight), 0.1, 100);
+    camera.position.set(0, 0, 3.05);
 
     const root = new THREE.Group();
     root.rotation.z = THREE.MathUtils.degToRad(23.4); // axial tilt
+    root.rotation.y = -0.6; // start on Africa / Europe
     scene.add(root);
 
-    /* ── ocean sphere ── */
-    const oceanGeo = new THREE.SphereGeometry(1, 96, 64);
-    const oceanMat = new THREE.MeshStandardMaterial({ color: OCEAN[theme], roughness: 0.92, metalness: 0.0 });
-    const ocean = new THREE.Mesh(oceanGeo, oceanMat);
-    root.add(ocean);
+    /* ── the planet ── */
+    const loader = new THREE.TextureLoader();
+    loader.setCrossOrigin("anonymous");
+    const earthTex = loader.load(TEXTURE[theme]);
+    earthTex.colorSpace = THREE.SRGBColorSpace;
+    earthTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 
-    /* ── atmosphere rim: a back-facing sphere with additive falloff ── */
-    const rimGeo = new THREE.SphereGeometry(1.035, 64, 48);
-    const rimMat = new THREE.MeshBasicMaterial({ color: RIM[theme], transparent: true, opacity: 0.16, side: THREE.BackSide });
-    root.add(new THREE.Mesh(rimGeo, rimMat));
+    const earthGeo = new THREE.SphereGeometry(1, 128, 96);
+    const earthMat = new THREE.MeshStandardMaterial({
+      map: earthTex,
+      roughness: 0.86,
+      metalness: 0.0,
+    });
+    const earth = new THREE.Mesh(earthGeo, earthMat);
+    root.add(earth);
 
-    /* ── climate bands: thin latitude ribbons sitting just above the ocean ── */
+    /* ── atmosphere rim: a slightly larger back-facing sphere ── */
+    const rimMat = new THREE.MeshBasicMaterial({
+      color: RIM[theme],
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.BackSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    root.add(new THREE.Mesh(new THREE.SphereGeometry(1.045, 96, 64), rimMat));
+
+    /* ── climate overlay: latitude bands, transparent so the planet shows through ── */
+    const BANDS = 36;
     const bandGroup = new THREE.Group();
-    root.add(bandGroup);
-    const BANDS = 32;
     const bandMeshes: THREE.Mesh[] = [];
+    const bandGeo = new THREE.SphereGeometry(1.002, 96, 3);
     for (let i = 0; i < BANDS; i++) {
-      const latTop = 90 - (180 * i) / BANDS;
-      const latBottom = 90 - (180 * (i + 1)) / BANDS;
-      const phiTop = ((90 - latTop) * Math.PI) / 180;
-      const phiBottom = ((90 - latBottom) * Math.PI) / 180;
-      const geo = new THREE.SphereGeometry(1.004, 96, 3, 0, Math.PI * 2, phiTop, phiBottom - phiTop);
-      const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false });
+      const phiTop = (Math.PI * i) / BANDS;
+      const geo = new THREE.SphereGeometry(1.002, 96, 3, 0, Math.PI * 2, phiTop, Math.PI / BANDS);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
       const mesh = new THREE.Mesh(geo, mat);
       bandMeshes.push(mesh);
       bandGroup.add(mesh);
     }
+    bandGroup.visible = true;
+    root.add(bandGroup);
+    bandGeo.dispose(); // the per-band geometries above are the ones in use
 
-    /* ── land: one mesh, real continents ── */
-    let landMesh: THREE.Mesh | null = null;
-
-    /* ── lighting: one key light (day side) + soft fill ── */
-    const key = new THREE.DirectionalLight(0xffffff, theme === "dark" ? 2.1 : 2.6);
-    key.position.set(-2.2, 1.4, 2.6);
-    scene.add(key);
-    const fill = new THREE.AmbientLight(theme === "dark" ? 0x4a6a7a : 0xdfe8f0, theme === "dark" ? 0.55 : 0.9);
+    /* ── lighting: a sun that keeps the terminator visible ── */
+    const sun = new THREE.DirectionalLight(0xfff4e6, theme === "dark" ? 2.6 : 2.2);
+    sun.position.set(-2.6, 0.9, 2.2);
+    scene.add(sun);
+    const fill = new THREE.AmbientLight(theme === "dark" ? 0x2c4250 : 0xdce8f4, theme === "dark" ? 0.42 : 0.72);
     scene.add(fill);
+    // a very dim rim light from behind so the night side is not pure black
+    const back = new THREE.DirectionalLight(theme === "dark" ? 0x1d5f7a : 0x8fb8dd, 0.35);
+    back.position.set(1.6, -0.4, -1.8);
+    scene.add(back);
 
-    /* ── interaction: drag to spin, wheel to zoom ── */
-    const drag = { active: false, x: 0, y: 0, rx: 0, ry: 0, vx: 0.0012 };
+    /* ── interaction: drag to spin, wheel to zoom, arrows to turn ── */
+    const drag = { active: false, x: 0, y: 0, rx: 0, ry: root.rotation.y, vx: 0.0016 };
     const onDown = (e: PointerEvent) => {
       drag.active = true;
       drag.x = e.clientX;
@@ -135,19 +161,18 @@ export default function EarthGlobe({ t, year, level = 0, theme, still = false }:
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      camera.position.z = THREE.MathUtils.clamp(camera.position.z + e.deltaY * 0.0016, 2.1, 5.2);
+      camera.position.z = THREE.MathUtils.clamp(camera.position.z + e.deltaY * 0.0016, 1.9, 5.0);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowLeft") drag.ry -= 0.08;
       else if (e.key === "ArrowRight") drag.ry += 0.08;
-      else if (e.key === "ArrowUp") camera.position.z = Math.max(2.1, camera.position.z - 0.15);
-      else if (e.key === "ArrowDown") camera.position.z = Math.min(5.2, camera.position.z + 0.15);
+      else if (e.key === "ArrowUp") camera.position.z = Math.max(1.9, camera.position.z - 0.15);
+      else if (e.key === "ArrowDown") camera.position.z = Math.min(5.0, camera.position.z + 0.15);
       else return;
       e.preventDefault();
     };
 
     host.style.cursor = "grab";
-    host.tabIndex = 0;
     host.addEventListener("pointerdown", onDown);
     host.addEventListener("pointermove", onMove);
     host.addEventListener("pointerup", onUp);
@@ -165,7 +190,7 @@ export default function EarthGlobe({ t, year, level = 0, theme, still = false }:
     });
     ro.observe(host);
 
-    /* ── pause when off-screen or hidden ── */
+    /* ── pause off-screen / hidden ── */
     let visible = true;
     const io = new IntersectionObserver((entries) => {
       visible = entries[0]?.isIntersecting ?? true;
@@ -176,68 +201,58 @@ export default function EarthGlobe({ t, year, level = 0, theme, still = false }:
     };
     document.addEventListener("visibilitychange", onVis);
 
-    /* ── build land asynchronously, then start the loop ── */
-    let started = false;
-    const start = () => {
-      if (started || disposed) return;
-      started = true;
-      let last = performance.now();
-      let pulse = 0;
+    /* ── loop ── */
+    let last = performance.now();
+    let pulse = 0;
+    let currentTheme = theme;
 
-      const tick = (now: number) => {
-        if (disposed) return;
-        const dt = Math.min(0.05, (now - last) / 1000);
-        last = now;
-        if (visible) {
-          const s = stateRef.current;
-          if (!s.still && !drag.active) drag.ry += drag.vx * dt * 60 * 0.35;
-          root.rotation.y = drag.ry;
-          root.rotation.x = drag.rx;
-          pulse += ((s.level ?? 0) - pulse) * Math.min(1, dt * 6);
-          const scale = 1 + pulse * 0.035;
-          root.scale.setScalar(scale);
-          rimMat.opacity = 0.14 + pulse * 0.22;
+    const tick = (now: number) => {
+      if (disposed) return;
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      if (visible) {
+        const s = stateRef.current;
 
-          if (landMesh) (landMesh.material as THREE.MeshStandardMaterial).color.setHex(LAND[s.theme]);
-          oceanMat.color.setHex(OCEAN[s.theme]);
-          rimMat.color.setHex(RIM[s.theme]);
-          key.intensity = s.theme === "dark" ? 2.1 : 2.6;
-          fill.intensity = s.theme === "dark" ? 0.55 : 0.9;
-
-          const bands = latitudeBands(s.t, 0, 1, BANDS);
-          for (let i = 0; i < bandMeshes.length; i++) {
-            (bandMeshes[i].material as THREE.MeshBasicMaterial).color.set(bands[i].color);
-          }
-          renderer.render(scene, camera);
+        if (s.theme !== currentTheme) {
+          currentTheme = s.theme;
+          earthTex.dispose();
+          const next = loader.load(TEXTURE[currentTheme]);
+          next.colorSpace = THREE.SRGBColorSpace;
+          next.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+          earthMat.map = next;
+          earthMat.needsUpdate = true;
+          rimMat.color.setHex(RIM[currentTheme]);
+          sun.intensity = currentTheme === "dark" ? 2.6 : 2.2;
+          fill.color.setHex(currentTheme === "dark" ? 0x2c4250 : 0xdce8f4);
+          fill.intensity = currentTheme === "dark" ? 0.42 : 0.72;
+          back.color.setHex(currentTheme === "dark" ? 0x1d5f7a : 0x8fb8dd);
         }
-        raf = requestAnimationFrame(tick);
-      };
+
+        if (!s.still && !drag.active) drag.ry += drag.vx * dt * 60 * 0.35;
+        root.rotation.y = drag.ry;
+        root.rotation.x = drag.rx;
+
+        pulse += ((s.level ?? 0) - pulse) * Math.min(1, dt * 6);
+        root.scale.setScalar(1 + pulse * 0.03);
+        rimMat.opacity = 0.16 + pulse * 0.2;
+
+        // Overlay strength: a whisper at the coldest year, stronger at the warmest, so "how much"
+        // reads as a visual intensity instead of a hue that is impossible to compare by eye.
+        const strength = 0.10 + s.t * 0.34;
+        const bands = latitudeBands(s.t, 0, 1, BANDS);
+        for (let i = 0; i < bandMeshes.length; i++) {
+          const mat = bandMeshes[i].material as THREE.MeshBasicMaterial;
+          mat.color.set(bands[i].color);
+          mat.opacity = strength;
+        }
+        bandGroup.rotation.y = drag.ry * -0.02; // slight parallax, keeps bands from looking painted on
+
+        renderer.render(scene, camera);
+      }
       raf = requestAnimationFrame(tick);
     };
+    raf = requestAnimationFrame(tick);
 
-    buildLandMesh()
-      .then(({ vertices }) => {
-        if (disposed) return;
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
-        geo.computeVertexNormals();
-        const mat = new THREE.MeshStandardMaterial({
-          color: LAND[theme],
-          roughness: 0.85,
-          metalness: 0.02,
-          side: THREE.DoubleSide,
-        });
-        landMesh = new THREE.Mesh(geo, mat);
-        landMesh.scale.setScalar(1.006);
-        root.add(landMesh);
-        start();
-      })
-      .catch(() => {
-        setFailed(false); // still render ocean + bands rather than nothing
-        start();
-      });
-
-    /* ── cleanup ── */
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
@@ -257,6 +272,7 @@ export default function EarthGlobe({ t, year, level = 0, theme, still = false }:
         if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
         else mat?.dispose();
       });
+      earthTex.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };
@@ -270,10 +286,7 @@ export default function EarthGlobe({ t, year, level = 0, theme, still = false }:
       ref={hostRef}
       className="globe-host"
       role="img"
-      aria-label={`Rotating globe showing the ${year} climate band overlay. Use arrow keys to turn it.`}
+      aria-label={`Rotating globe of the Earth showing the ${year} climate overlay. Use arrow keys to turn it.`}
     />
   );
 }
-
-/** Pre-computes a few lat/lon helpers for tests and the fallback poster. */
-export const _internal = { toCartesian };

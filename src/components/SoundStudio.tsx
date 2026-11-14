@@ -34,14 +34,24 @@ function yearTrack(value: number, min: number, max: number, movingAverage: numbe
   return buildSeriesFrames(records, scale, "temperature");
 }
 
-export function SoundStudio() {
+export function SoundStudio({ initialRecords = [] }: { initialRecords?: { date: string; value: number; movingAverage10Y: number | null }[] }) {
   const { t, fmtNumber, announce, dir } = useApp();
-  const [annual, setAnnual] = useState<Annual[]>([]);
+  const [annual, setAnnual] = useState<Annual[]>(() =>
+    initialRecords
+      .map((r) => ({ year: Number(r.date.slice(0, 4)), value: r.value, movingAverage10Y: r.movingAverage10Y }))
+      .filter((r) => Number.isFinite(r.value))
+      .sort((a, b) => a.year - b.year),
+  );
   const [error, setError] = useState(false);
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelected] = useState<number | null>(() =>
+    initialRecords.length
+      ? Number(initialRecords[initialRecords.length - 1].date.slice(0, 4))
+      : null,
+  );
   const [mode, setMode] = useState<"year" | "record">("year");
 
   useEffect(() => {
+    if (initialRecords.length) return;
     let alive = true;
     // State is set from the network callback only, after an await — never synchronously.
     apiFetch<Payload>("/api/team-data")
@@ -58,7 +68,7 @@ export function SoundStudio() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [initialRecords.length]);
 
   const scale = useMemo(() => {
     if (!annual.length) return { min: -0.5, max: 1.5 };

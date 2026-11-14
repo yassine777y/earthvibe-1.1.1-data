@@ -60,9 +60,11 @@ describe("globe fallback", () => {
     expect(html).toContain("<svg");
     expect(html).toContain("1998");
     expect(html).toContain('role="img"');
-    expect(html).toMatch(/aria-label="Globe for 1998/);
+    expect(html).toMatch(/aria-label="Globe of the Earth for 1998/);
+    // the static poster uses the same real Blue Marble photograph as the 3D globe
+    expect(html).toContain("/textures/earth-day.jpg");
     // it draws real latitude bands, not a flat circle
-    expect((html.match(/<path/g) ?? []).length).toBeGreaterThan(20);
+    expect((html.match(/<path/g) ?? []).length).toBeGreaterThan(18);
   });
 });
 

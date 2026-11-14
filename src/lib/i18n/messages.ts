@@ -1,6 +1,8 @@
 export type Lang = "en" | "ar" | "fr";
 
 const en = {
+  "years.title": "The same Earth, one frame per year",
+  "years.note": "Every tile is the real planet with that year’s overlay painted on it. Pick one to change the globe above.",
   "hero2.offline": "Could not load the bundled record. Open the release manifest to download the same data.",
   "nav.studio": "Studio",
   "nav.sources": "Sources",
@@ -400,6 +402,8 @@ export type MessageKey = keyof typeof en;
 type Dict = Record<MessageKey, string>;
 
 const ar: Dict = {
+  "years.title": "نفس الأرض، إطار لكل سنة",
+  "years.note": "كل مربّع هو الكوكب الحقيقي وعليه طبقة تلك السنة. اختر واحدًا لتغيير الكرة أعلاه.",
   "hero2.offline": "تعذّر تحميل السجل المضمّن. افتح بيان الإصدار لتنزيل البيانات نفسها.",
   "nav.studio": "الاستوديو",
   "nav.sources": "المصادر",
@@ -796,6 +800,8 @@ const ar: Dict = {
 };
 
 const fr: Dict = {
+  "years.title": "La même Terre, une image par année",
+  "years.note": "Chaque vignette est la planète réelle avec la couche de cette année. Choisissez-en une pour changer le globe ci-dessus.",
   "hero2.offline": "Impossible de charger le relevé embarqué. Ouvrez le manifeste pour télécharger les mêmes données.",
   "nav.studio": "Studio",
   "nav.sources": "Sources",
