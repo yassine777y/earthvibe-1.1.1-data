@@ -39,10 +39,10 @@ export function Header() {
             <span>Earth Jukebox</span>
           </a>
           <nav aria-label={t("nav.label")} className="nav">
+            <a href="#studio">{t("nav.studio")}</a>
             <a href="#agent">{t("nav.agent")}</a>
             <a href="#explore">{t("nav.explore")}</a>
-            <a href="#gallery">{t("nav.gallery")}</a>
-            <a href="#image-lab">{t("nav.imageLab")}</a>
+            <a href="#sources">{t("nav.sources")}</a>
             <a href="#method">{t("nav.method")}</a>
           </nav>
           <div className="header-tools">
@@ -242,7 +242,7 @@ function Ticker({ annual }: { annual: AnnualPoint[] }) {
   );
 }
 
-export function Hero() {
+function LegacyHero() {
   const { t, fmtNumber } = useApp();
   const { annual, error } = useAnnualTemperature();
   const warmest = annual.length ? annual.reduce((a, b) => (b.value > a.value ? b : a)) : null;

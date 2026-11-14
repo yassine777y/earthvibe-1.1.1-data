@@ -1,12 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { Unbounded, Inter, Noto_Sans_Arabic } from "next/font/google";
+import "@fontsource-variable/space-grotesk";
+import "@fontsource-variable/inter";
+import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
-import "./creative.css";
 
-const display = Unbounded({ subsets: ["latin"], variable: "--font-display", display: "swap" });
-const arabic = Noto_Sans_Arabic({ subsets: ["arabic"], variable: "--font-arabic", display: "swap" });
-const body = Inter({ subsets: ["latin"], variable: "--font-body", display: "swap" });
+/* Fonts are self-hosted (@fontsource-variable) so the build never depends on fonts.googleapis.com.
+   Arabic falls back to the system Arabic face declared in --font-arabic. */
 
 export const metadata: Metadata = {
   title: "Earth Jukebox — hear NASA Earth data",
@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#05080F" },
-    { media: "(prefers-color-scheme: light)", color: "#F4EDE1" },
+    { media: "(prefers-color-scheme: dark)", color: "#08090C" },
+    { media: "(prefers-color-scheme: light)", color: "#F7F9FC" },
   ],
 };
 
@@ -25,7 +25,7 @@ const themeScript = `(function(){try{var s=localStorage.getItem('earthjukebox.th
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" dir="ltr" data-theme="dark" suppressHydrationWarning className={`${display.variable} ${body.variable} ${arabic.variable}`}>
+    <html lang="en" dir="ltr" data-theme="dark" suppressHydrationWarning >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
