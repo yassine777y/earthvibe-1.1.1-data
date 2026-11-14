@@ -4,6 +4,8 @@ import { messages } from "@/lib/i18n/messages";
 import { buildImageFrames, buildSeriesFrames, degreeToFreq, DEGREES, MAX_SERIES_FRAMES } from "@/lib/audio/mapping";
 import { Providers } from "@/components/Providers";
 import { Chart } from "@/components/Chart";
+import { VoiceAgent } from "@/components/VoiceAgent";
+import { ReleasePanel } from "@/components/ReleasePanel";
 
 describe("i18n", () => {
   const keys = Object.keys(messages.en);
@@ -81,5 +83,34 @@ describe("Chart accessibility", () => {
     expect(html).toContain('role="img"');
     expect(html).toContain('aria-label="Summary text for screen readers"');
     expect(html).toContain("1951–1980");
+  });
+});
+
+describe("voice agent UI", () => {
+  it("renders the agent console with real labels, an accessible input, a mic button and no autoplay", () => {
+    const html = renderToString(
+      <Providers>
+        <VoiceAgent />
+      </Providers>,
+    );
+    expect(html).toContain("Ask EarthVibe out loud");
+    expect(html).toContain('id="agent"');
+    expect(html).toContain("Your question"); // labelled input
+    expect(html).toContain("Speak your question"); // voice input
+    expect(html).toContain('aria-pressed="true"'); // voice-output toggle defaults on
+    expect(html).toContain("No questions yet");
+    expect(html).not.toContain("autoplay"); // nothing starts on its own
+    expect(html).toContain("Conversation"); // transcript region for screen readers
+  });
+
+  it("renders the release section heading and its integrity note targets", () => {
+    const html = renderToString(
+      <Providers>
+        <ReleasePanel />
+      </Providers>,
+    );
+    expect(html).toContain("The data, released with the agent");
+    expect(html).toContain('id="release"');
+    expect(html).toContain("Loading…");
   });
 });

@@ -23,6 +23,10 @@ src/
   app/api/…            REST API (health, datasets, series, visualizations, image proxy, image analyze)
   lib/server/          parsers, provenance cache, dataset + visualization catalogue, image analysis
   lib/audio/           pure data→sound mapping + Web Audio engine
+  lib/agent/           voice-agent brain: intent detection, facts, three-language answers
+  lib/speech.ts        browser speech synthesis helpers (voice picking, sentence chunking)
+  components/VoiceAgent.tsx, ReleasePanel.tsx   the agent console and the release/boot section
+  scripts/build-release.mjs                     npm run release → release/release.json
   lib/i18n/messages.ts EN / AR / FR dictionaries (type-checked for completeness)
   components/          Hero, topic picker, Explorer (chart/player/compare/table), Image lab, gallery…
 db/init.sql            cache table for Docker
@@ -67,6 +71,36 @@ Sound is generated in the browser only after the user presses Play (no autoplay)
 
 Long series are block-averaged into at most 160 notes (6 notes/s at 1×). The mapping lives in `src/lib/audio/mapping.ts` (pure, tested) and the sound design in `src/lib/audio/engine.ts`. Musical choices are not scientific measurements. Optional stereo sweep exists only for equirectangular NASA images (where horizontal position = longitude); it is off by default and everything works in mono.
 
+## EarthVibe voice agent — an audio-first boot for blind and low-vision listeners
+
+EarthVibe now boots with a voice agent on the home page (section **★**): you ask a question by typing or by pressing the microphone, and the agent
+
+1. answers **out loud** in English, Arabic or French using the device's built-in speech synthesis (no audio is uploaded for this),
+2. shows the **same answer as text** on screen, permanently, so a screen reader or a sighted helper can read it,
+3. offers **Listen to these numbers**: the exact years in the answer are turned into tones with the existing Web Audio engine (warmer = higher pitch, louder is never used for data),
+4. tells you honestly when it cannot help (a missing year, an unconfigured transcriber, a device with no voice for the language).
+
+The agent is a **rule-based dialog engine** (`src/lib/agent/answer.ts`), not a cloud LLM. That is deliberate:
+
+- it answers **only** from the released annual record (`data/team/*.csv`), so every number it speaks can be checked against the files;
+- it **never invents** a value: a year outside 1880–2025 is reported as missing, with the record range;
+- **projections are labelled as projections** and are never sonified or mixed with observations;
+- the same answer exists in all three languages, and the question's own language wins (ask in Arabic, get Arabic).
+
+It understands latest / warmest / coldest year, a specific year, warming trend, comparisons between two years, the released data, the model outlook, "what does the sound mean", help/about, and asks for a human. A month named in a question ("January 2024") produces an explicit note that the released file is annual only.
+
+Speech **in** has two honest modes: the browser records one clip only after you press the microphone button and posts it to `POST /api/transcribe`; if `TRANSCRIBE_API_URL` is configured the clip is forwarded once to that service and the transcript returned (the clip is never written to disk or stored). If it is not configured the endpoint answers `501 transcription_not_configured` and the UI says so — it never pretends to have heard anything. Typing always works.
+
+## Open data release and boot
+
+The data is released together with the agent:
+
+- **In the app** at section **06** ("The data, released with the agent"): the record range, the warmest released year, the prediction-row count, **SHA-256 checksums** of the shipped files, the open endpoints, and a plain list of what the agent can and cannot do.
+- **`GET /api/release`** returns the same manifest as JSON (files, sizes, hashes, provenance, licence/citation, agent capabilities and limitations).
+- **`npm run release`** regenerates `release/release.json` from the exact files in `data/team/`, validating them first and refusing to publish if the full and sonification datasets disagree.
+
+No live NASA feed is reachable from this deployment, so the agent boots on the released archive instead of pretending a live feed exists — the monthly feeds in the explorer still try the live sources and report their status honestly.
+
 ## Team-supplied annual temperature data
 
 The project also includes the processed data archive supplied by the Earth Jukebox team in `data/team/`:
@@ -87,6 +121,11 @@ The project also includes the processed data archive supplied by the Earth Jukeb
 | `GET /api/visualizations` | curated, verified NASA visualization entries (title, source type, original page URL, date, layer, attribution) |
 | `GET /api/visualizations/{id}/image` | cached copy of a catalogue GIBS image (ids only; never URLs) |
 | `POST /api/images/analyze` | multipart `file` (PNG/JPEG/WebP ≤ 8 MB, ≤ 8000×8000 px, ≤ 40 MP, content-sniffed) **or** `visualizationId`; returns 28 bands of visual features. Processed in memory, never stored |
+| `GET /api/agent` | voice-agent manifest: languages, inputs/outputs, data files, privacy, intent list, and the observed range actually on disk |
+| `POST /api/agent` | `{"question": "…", "defaultLang"?}` → answer with `speech` (read-aloud text), `headline`, key facts, `suggestions`, `sources` and a `listen` sonification built from the released years. 400/413/415 for invalid input |
+| `GET /api/release` | open data release manifest with SHA-256 hashes of the shipped files |
+| `GET /api/transcribe` | reports whether server-side speech recognition is configured (and the limits) |
+| `POST /api/transcribe` | multipart `audio` (≤ 6 MB, webm/ogg/mp4/mpeg/wav/aac). Forwarded once to `TRANSCRIBE_API_URL` when configured; **501** with code `transcription_not_configured` otherwise |
 
 Series response (abridged):
 
@@ -120,10 +159,16 @@ npm run dev                     # http://localhost:3000
 
 Production build: `npm run build && npm start`.
 
+Publish or refresh the open data release manifest after changing anything in `data/team/`:
+
+```bash
+npm run release                 # validates the CSVs, writes release/release.json with SHA-256 hashes
+```
+
 ## Tests and checks
 
 ```bash
-npx vitest run                  # parsers, API, cache, image upload, mapping, i18n, chart a11y
+npx vitest run                  # parsers, API, cache, image upload, mapping, i18n, chart a11y, agent, release
 npx tsc --noEmit
 npm run build
 curl localhost:3000/api/health  # smoke test (after npm start)
