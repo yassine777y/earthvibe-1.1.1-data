@@ -2327,3 +2327,13 @@ html[lang="ar"] .readout-label {
   gap: 0.9rem;
   font-size: 0.82rem;
 }
+
+/* hero: offline notice sits under the readout, quiet but visible */
+.hero2-offline {
+  margin: 0.9rem 0 0;
+  max-width: 34rem;
+  font-size: 0.78rem;
+  color: var(--c-muted);
+  border-inline-start: 2px solid var(--c-heat);
+  padding-inline-start: 0.65rem;
+}

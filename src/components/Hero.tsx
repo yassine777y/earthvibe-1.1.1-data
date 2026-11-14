@@ -1,44 +1,74 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "./Providers";
 import { GlobeStage } from "./globe/GlobeStage";
-import { useSeries } from "@/lib/hooks";
+import { apiFetch, type Remote } from "@/lib/hooks";
 import { norm } from "@/lib/globe/ramp";
 import type { MessageKey } from "@/lib/i18n/messages";
 
 /**
  * Hero — globe first, then one headline, then the ask/search bar.
  *
+ * Data path: the released team dataset (`/api/team-data`) is bundled with the repository, so the
+ * globe and the readout render even when the sandbox cannot reach the upstream NASA hosts. The
+ * GISTEMP series endpoint is only used as a refinement when it happens to be reachable.
+ *
  * The search bar is deliberately the first interactive element in the DOM after the heading, so a
  * screen-reader or keyboard user lands on it immediately; the globe is decorative.
  */
+type Series = { year: number; value: number; movingAverage10Y: number | null };
+type TeamPayload = {
+  dataset: {
+    records: { date: string; value: number; movingAverage10Y: number | null }[];
+    units: string;
+    referencePeriod: string;
+  };
+};
+
+function toAnnual(records: { date: string; value: number; movingAverage10Y: number | null }[]): Series[] {
+  const byYear = new Map<number, { sum: number; n: number; ma: number | null }>();
+  for (const r of records) {
+    if (!Number.isFinite(r.value)) continue;
+    const y = Number(r.date.slice(0, 4));
+    if (!Number.isFinite(y)) continue;
+    const cur = byYear.get(y) ?? { sum: 0, n: 0, ma: r.movingAverage10Y };
+    cur.sum += r.value;
+    cur.n += 1;
+    if (cur.ma === null && r.movingAverage10Y !== null) cur.ma = r.movingAverage10Y;
+    byYear.set(y, cur);
+  }
+  return [...byYear.entries()]
+    .map(([year, a]) => ({ year, value: a.sum / a.n, movingAverage10Y: a.ma }))
+    .sort((a, b) => a.year - b.year);
+}
+
 export function Hero() {
   const { t, fmtNumber, theme, announce } = useApp();
   const [year, setYear] = useState<number | null>(null);
   const [query, setQuery] = useState("");
+  const [series, setSeries] = useState<Remote<Series[]>>({ status: "loading" });
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { state } = useSeries("temperature", {});
-  const annual = useMemo(() => {
-    if (state.status !== "ready") return [];
-    const byYear = new Map<string, number[]>();
-    for (const r of state.data.records) {
-      const y = r.date.slice(0, 4);
-      byYear.set(y, [...(byYear.get(y) ?? []), r.value]);
-    }
-    return [...byYear.entries()]
-      .filter(([, v]) => v.length === 12)
-      .map(([y, v]) => ({ year: Number(y), value: v.reduce((a, b) => a + b, 0) / v.length }))
-      .sort((a, b) => a.year - b.year);
-  }, [state]);
+  // The CSV-backed annual record is a local asset, so this never depends on the upstream network.
+  useEffect(() => {
+    let alive = true;
+    // State is only touched from the promise callback, never synchronously in the effect body.
+    apiFetch<TeamPayload>("/api/team-data")
+      .then((d) => alive && setSeries({ status: "ready", data: toAnnual(d.dataset.records) }))
+      .catch((e) => alive && setSeries({ status: "error", error: e }));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const annual = useMemo(() => (series.status === "ready" ? series.data : []), [series]);
 
   const scale = useMemo(() => {
     if (!annual.length) return { min: -0.5, max: 1.5 };
     return { min: Math.min(...annual.map((a) => a.value)), max: Math.max(...annual.map((a) => a.value)) };
   }, [annual]);
 
-  // No effect needed: when no year has been chosen yet, the latest year is the selection.
   const selected = useMemo(() => {
     if (!annual.length) return null;
     const want = year ?? annual[annual.length - 1].year;
@@ -132,6 +162,12 @@ export function Hero() {
               <dd className="mono">{annual.length ? `${annual[0].year}–${annual[annual.length - 1].year}` : "—"}</dd>
             </div>
           </dl>
+
+          {series.status === "error" && (
+            <p className="hero2-offline mono" role="status">
+              {t("hero2.offline")}
+            </p>
+          )}
         </div>
 
         <div className="hero2-art">

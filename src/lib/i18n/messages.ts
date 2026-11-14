@@ -1,6 +1,7 @@
 export type Lang = "en" | "ar" | "fr";
 
 const en = {
+  "hero2.offline": "Could not load the bundled record. Open the release manifest to download the same data.",
   "nav.studio": "Studio",
   "nav.sources": "Sources",
   "sources.eyebrow": "Sources · every phenomenon",
@@ -399,6 +400,7 @@ export type MessageKey = keyof typeof en;
 type Dict = Record<MessageKey, string>;
 
 const ar: Dict = {
+  "hero2.offline": "تعذّر تحميل السجل المضمّن. افتح بيان الإصدار لتنزيل البيانات نفسها.",
   "nav.studio": "الاستوديو",
   "nav.sources": "المصادر",
   "sources.eyebrow": "المصادر · كل ظاهرة",
@@ -794,6 +796,7 @@ const ar: Dict = {
 };
 
 const fr: Dict = {
+  "hero2.offline": "Impossible de charger le relevé embarqué. Ouvrez le manifeste pour télécharger les mêmes données.",
   "nav.studio": "Studio",
   "nav.sources": "Sources",
   "sources.eyebrow": "Sources · chaque phénomène",
