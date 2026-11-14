@@ -103,6 +103,68 @@ export async function analyzeImage(input: { file?: File; visualizationId?: strin
   return apiFetch<AnalyzeResult>("/api/images/analyze", { method: "POST", body: form });
 }
 
+/* ───────────── EarthVibe voice agent ───────────── */
+
+export type AgentAnswerClient = {
+  intent: string;
+  lang: "en" | "ar" | "fr";
+  heard: string;
+  headline: string;
+  speech: string;
+  sections: { label: string; value: string }[];
+  listen: { from: string; to: string; label: string; records: { date: string; value: number }[]; scale: { min: number; max: number; zero: number | null } } | null;
+  suggestions: string[];
+  sources: { label: string; url: string }[];
+  usesProjection: boolean;
+};
+
+export type AgentManifestClient = {
+  name: string;
+  version: string;
+  languages: string[];
+  data: { endpoint: string; files: string[]; observedRange: { start: string; end: string } | null; records: number; note: string };
+  privacy: { audio: string; text: string };
+  intents: string[];
+  heartbeat: string;
+};
+
+export async function fetchAgentManifest(): Promise<AgentManifestClient> {
+  return apiFetch<AgentManifestClient>("/api/agent");
+}
+
+export async function askAgent(question: string, defaultLang: "en" | "ar" | "fr"): Promise<AgentAnswerClient> {
+  return apiFetch<AgentAnswerClient>("/api/agent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, defaultLang }),
+  });
+}
+
+export type TranscribeOutcome =
+  | { status: "text"; text: string }
+  | { status: "empty" }
+  | { status: "not_configured" }
+  | { status: "error"; message: string };
+
+/** Send one recorded clip for transcription. Audio is forwarded once and never stored. */
+export async function transcribeAudio(blob: Blob): Promise<TranscribeOutcome> {
+  const form = new FormData();
+  form.set("audio", blob, "question.webm");
+  let res: Response;
+  try {
+    res = await fetch("/api/transcribe", { method: "POST", body: form });
+  } catch {
+    return { status: "error", message: "network_error" };
+  }
+  const body = (await res.json().catch(() => null)) as
+    | { text?: string; empty?: boolean; error?: { code: string; message: string } }
+    | null;
+  if (res.status === 501 || body?.error?.code === "transcription_not_configured") return { status: "not_configured" };
+  if (!res.ok) return { status: "error", message: body?.error?.message ?? `HTTP ${res.status}` };
+  if (!body?.text) return { status: "empty" };
+  return { status: "text", text: body.text };
+}
+
 export function usePlayer(track: Track | null) {
   const [engineState, setEngineState] = useState<EngineState>({ position: 0, playing: false, ended: false });
   const [speed, setSpeedState] = useState(1);

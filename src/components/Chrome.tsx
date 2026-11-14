@@ -39,6 +39,7 @@ export function Header() {
             <span>Earth Jukebox</span>
           </a>
           <nav aria-label={t("nav.label")} className="nav">
+            <a href="#agent">{t("nav.agent")}</a>
             <a href="#explore">{t("nav.explore")}</a>
             <a href="#gallery">{t("nav.gallery")}</a>
             <a href="#image-lab">{t("nav.imageLab")}</a>
@@ -314,7 +315,7 @@ export function Method() {
   return (
     <section className="section" id="method" aria-labelledby="method-h">
       <div className="wrap">
-        <span className="section-index" aria-hidden="true">04</span>
+        <span className="section-index" aria-hidden="true">07</span>
           <h2 id="method-h">{t("method.title")}</h2>
         <p className="lead">{t("method.lead")}</p>
         <ol className="steps">
